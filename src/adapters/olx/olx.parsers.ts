@@ -268,7 +268,10 @@ function extractOlxFeatures($: cheerio.CheerioAPI): string[] {
 
 export function parseOlxPrice(text: string): number | undefined {
   if (!text) return undefined;
-  const digits = text.replace(/[^\d]/g, "");
+  // Remove CSS and HTML junk first - split on first curly brace or common separators
+  const cleaned = text.split(/[.{<]/)[0].trim();
+  if (!cleaned) return undefined;
+  const digits = cleaned.replace(/[^\d]/g, "");
   const n = parseInt(digits, 10);
   return isNaN(n) || n === 0 ? undefined : n;
 }

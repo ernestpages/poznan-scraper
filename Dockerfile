@@ -26,6 +26,9 @@ RUN npx prisma generate
 # Compile TypeScript
 RUN npm run build
 
+# Install Playwright browsers
+RUN npx playwright install --with-deps chromium
+
 # ---------------------------------------------------------------------------
 # Stage 2 – Production image
 # ---------------------------------------------------------------------------
@@ -57,6 +60,7 @@ RUN apt-get update && apt-get install -y \
 # Tell Playwright to use the system Chromium instead of downloading its own
 ENV PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=/usr/bin/chromium
 ENV PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
+ENV PLAYWRIGHT_BROWSERS_PATH=/app/ms-playwright
 
 # Copy only production artefacts
 COPY package.json package-lock.json* ./
@@ -64,6 +68,7 @@ RUN npm ci --omit=dev
 
 COPY --from=builder /app/dist ./dist
 COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma
+COPY --from=builder /root/.cache/ms-playwright ./ms-playwright
 COPY prisma ./prisma/
 
 # Non-root user for security
