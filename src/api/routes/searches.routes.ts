@@ -209,7 +209,7 @@ export async function searchesRoutes(app: FastifyInstance): Promise<void> {
       data: {
         name,
         portal: existing.portal,
-        filtersJson: existing.filtersJson,
+        filtersJson: existing.filtersJson as any,
         searchUrl: existing.searchUrl,
         frequencyMinutes: existing.frequencyMinutes,
         enabled: true,

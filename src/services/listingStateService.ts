@@ -1,4 +1,4 @@
-import { prisma } from "../db/prisma.js";
+import { db } from "../db/db.js";
 import { logger } from "../utils/logger.js";
 import type { ListingUserState, ListingStatus, UpdateListingStateRequest } from "../types/index.js";
 
@@ -9,12 +9,12 @@ const log = logger.child({ service: "listingStateService" });
  * If it doesn't exist, create it with FOUND status
  */
 export async function getOrCreateListingState(listingId: string): Promise<ListingUserState> {
-  let state = await prisma.listingUserState.findUnique({
+  let state = await db.listingUserState.findUnique({
     where: { listingId },
   });
 
   if (!state) {
-    state = await prisma.listingUserState.create({
+    state = await db.listingUserState.create({
       data: {
         listingId,
         status: "FOUND",
@@ -30,7 +30,7 @@ export async function getOrCreateListingState(listingId: string): Promise<Listin
  * Get existing ListingUserState
  */
 export async function getListingState(listingId: string): Promise<ListingUserState | null> {
-  const state = await prisma.listingUserState.findUnique({
+  const state = await db.listingUserState.findUnique({
     where: { listingId },
   });
 
@@ -70,7 +70,7 @@ export async function updateListingState(
     updateData.rating = updates.rating;
   }
 
-  const state = await prisma.listingUserState.update({
+  const state = await db.listingUserState.update({
     where: { listingId },
     data: updateData,
   });
@@ -105,7 +105,7 @@ export async function deleteListingWithValidation(listingId: string): Promise<vo
   }
 
   // Delete the listing (will cascade delete ListingUserState)
-  await prisma.listing.delete({
+  await db.listing.delete({
     where: { id: listingId },
   });
 
@@ -145,7 +145,7 @@ export async function deleteListingsByStatus(
   // If status is not FOUND, we need to check
   if (status !== "FOUND") {
     // Count how many are in FOUND status among these criteria
-    const foundCount = await prisma.listing.count({
+    const foundCount = await db.listing.count({
       where: {
         ...where,
         userState: {
@@ -166,7 +166,7 @@ export async function deleteListingsByStatus(
     }
   }
 
-  const listings = await prisma.listing.findMany({
+  const listings = await db.listing.findMany({
     where,
     select: { id: true },
   });
@@ -176,7 +176,7 @@ export async function deleteListingsByStatus(
   }
 
   // Delete all listings (cascade will delete ListingUserState)
-  const result = await prisma.listing.deleteMany({
+  const result = await db.listing.deleteMany({
     where,
   });
 
@@ -234,7 +234,7 @@ export async function deleteListingsByCriteria(criteria: {
   }
 
   // Verify that non-FOUND listings won't be deleted
-  const nonFoundCount = await prisma.listing.count({
+  const nonFoundCount = await db.listing.count({
     where: {
       ...where,
       userState: {
@@ -256,7 +256,7 @@ export async function deleteListingsByCriteria(criteria: {
   }
 
   // Delete all matching listings
-  const result = await prisma.listing.deleteMany({
+  const result = await db.listing.deleteMany({
     where,
   });
 
@@ -272,7 +272,7 @@ export async function getListingStatsByStatus(): Promise<Record<string, number>>
   const stats: Record<string, number> = {};
 
   for (const status of statuses) {
-    const count = await prisma.listing.count({
+    const count = await db.listing.count({
       where: {
         userState: {
           status,

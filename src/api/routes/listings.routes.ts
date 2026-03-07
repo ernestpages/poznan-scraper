@@ -126,13 +126,6 @@ export async function listingsRoutes(app: FastifyInstance): Promise<void> {
         orderBy: { [sortBy]: sortDir },
         skip,
         take: limit,
-        select: {
-          id: true, source: true, canonicalUrl: true, status: true,
-          title: true, price: true, currency: true, rooms: true,
-          areaM2: true, city: true, neighborhood: true, thumbnailUrl: true,
-          firstSeenAt: true, lastSeenAt: true, lastChangedAt: true,
-          userState: true,
-        },
       }),
       db.listing.count({ where }),
     ]);

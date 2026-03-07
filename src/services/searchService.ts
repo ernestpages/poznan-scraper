@@ -1,4 +1,4 @@
-import { prisma } from "../db/prisma.js";
+import { db } from "../db/db.js";
 import { logger } from "../utils/logger.js";
 import type { SearchFilters } from "../types/index.js";
 import { OtodomAdapter } from "../adapters/otodom/OtodomAdapter.js";
@@ -58,7 +58,7 @@ export async function createSearch(input: CreateSearchInput): Promise<SavedSearc
   const searchUrl = adapter.buildSearchUrl(filters);
 
   // Create in database
-  const search = await prisma.savedSearch.create({
+  const search = await db.savedSearch.create({
     data: {
       name,
       portal,
@@ -77,7 +77,7 @@ export async function createSearch(input: CreateSearchInput): Promise<SavedSearc
  * Get a saved search by ID
  */
 export async function getSearch(searchId: string): Promise<SavedSearchResponse | null> {
-  const search = await prisma.savedSearch.findUnique({
+  const search = await db.savedSearch.findUnique({
     where: { id: searchId },
   });
 
@@ -103,13 +103,13 @@ export async function listSearches(options?: {
   }
 
   const [searches, total] = await Promise.all([
-    prisma.savedSearch.findMany({
+    db.savedSearch.findMany({
       where,
       skip: options?.skip || 0,
       take: options?.take || 50,
       orderBy: { createdAt: "desc" },
     }),
-    prisma.savedSearch.count({ where }),
+    db.savedSearch.count({ where }),
   ]);
 
   return {
@@ -155,7 +155,7 @@ export async function updateSearch(
     updateData.searchUrl = searchUrl;
   }
 
-  const search = await prisma.savedSearch.update({
+  const search = await db.savedSearch.update({
     where: { id: searchId },
     data: updateData,
   });
@@ -170,22 +170,22 @@ export async function updateSearch(
 export async function deleteSearch(searchId: string, cascadeDeleteListings = false): Promise<void> {
   if (cascadeDeleteListings) {
     // Delete all listings associated with this search
-    const matches = await prisma.searchListingMatch.findMany({
+    const matches = await db.searchListingMatch.findMany({
       where: { searchId },
       select: { listingId: true },
     });
 
-    const listingIds = matches.map((m) => m.listingId);
+    const listingIds = matches.map((m: typeof matches[0]) => m.listingId);
 
     if (listingIds.length > 0) {
-      await prisma.listing.deleteMany({
+      await db.listing.deleteMany({
         where: { id: { in: listingIds } },
       });
       log.info({ searchId, deletedListings: listingIds.length }, "Deleted associated listings");
     }
   }
 
-  await prisma.savedSearch.delete({
+  await db.savedSearch.delete({
     where: { id: searchId },
   });
 
@@ -203,7 +203,7 @@ export async function duplicateSearch(searchId: string, newName?: string): Promi
 
   const name = newName || `${existing.name} (Copy)`;
 
-  const newSearch = await prisma.savedSearch.create({
+  const newSearch = await db.savedSearch.create({
     data: {
       name,
       portal: existing.portal,
@@ -223,7 +223,7 @@ export async function duplicateSearch(searchId: string, newName?: string): Promi
  * (This just updates the timestamp; actual runner checks this)
  */
 export async function executeSearchNow(searchId: string): Promise<SavedSearchResponse> {
-  const search = await prisma.savedSearch.update({
+  const search = await db.savedSearch.update({
     where: { id: searchId },
     data: {
       lastRunAt: new Date(),
@@ -256,7 +256,7 @@ export async function getSearchListings(
   }
 
   const [matches, total] = await Promise.all([
-    prisma.searchListingMatch.findMany({
+    db.searchListingMatch.findMany({
       where,
       skip: options?.skip || 0,
       take: options?.take || 50,
@@ -269,11 +269,11 @@ export async function getSearchListings(
       },
       orderBy: { lastMatchedAt: "desc" },
     }),
-    prisma.searchListingMatch.count({ where }),
+    db.searchListingMatch.count({ where }),
   ]);
 
   return {
-    listings: matches.map((m) => ({
+    listings: matches.map((m: typeof matches[0]) => ({
       ...m.listing,
       searchMatch: {
         firstMatchedAt: m.firstMatchedAt,
@@ -296,7 +296,7 @@ export async function getSearchStats(searchId: string) {
   }
 
   // Count listings by status
-  const statsByStatus = await prisma.searchListingMatch.groupBy({
+  const statsByStatus = await db.searchListingMatch.groupBy({
     by: ["userState"],
     where: { searchId },
     _count: true,
