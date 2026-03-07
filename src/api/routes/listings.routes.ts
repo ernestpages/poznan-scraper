@@ -2,6 +2,18 @@ import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { db } from "../../db/prisma.js";
 import { findPotentialDuplicates } from "../../core/crawlerRunner.js";
+import {
+  getOrCreateListingState,
+  updateListingState,
+  deleteListingWithValidation,
+  deleteListingsByCriteria,
+} from "../../services/listingStateService.js";
+
+// ---------------------------------------------------------------------------
+// Validation schemas
+// ---------------------------------------------------------------------------
+
+const ListingStatus = z.enum(["FOUND", "SEEN", "VISIT_PENDING", "VISITED", "FINALIST", "DISCARDED"]);
 
 const ListingsQuerySchema = z.object({
   source: z.string().optional(),
@@ -12,13 +24,48 @@ const ListingsQuerySchema = z.object({
   maxArea: z.coerce.number().optional(),
   rooms: z.coerce.number().int().optional(),
   status: z.enum(["active", "inactive"]).optional(),
+  listingStatus: ListingStatus.optional(),
   updatedSince: z.string().optional(),
+  hasComments: z.enum(["true", "false"]).optional(),
+  rating: z.coerce.number().int().min(1).max(5).optional(),
   page: z.coerce.number().int().min(1).default(1),
   limit: z.coerce.number().int().min(1).max(100).default(50),
+  sortBy: z.enum(["lastSeenAt", "price", "areaM2", "createdAt", "updatedAt"]).default("lastSeenAt"),
+  sortDir: z.enum(["asc", "desc"]).default("desc"),
 });
 
+const UpdateListingStateSchema = z.object({
+  status: ListingStatus.optional(),
+  comments: z.string().max(5000).optional(),
+  visitDate: z.string().datetime().optional(),
+  pros: z.array(z.string().max(200)).max(20).optional(),
+  cons: z.array(z.string().max(200)).max(20).optional(),
+  rating: z.number().int().min(1).max(5).optional(),
+});
+
+const BulkDeleteSchema = z.object({
+  // Filter by listing status (only FOUND listings can be deleted)
+  listingStatus: ListingStatus.optional(),
+  // Additional filters
+  priceMin: z.number().optional(),
+  priceMax: z.number().optional(),
+  areaMin: z.number().optional(),
+  areaMax: z.number().optional(),
+  portal: z.string().optional(),
+  city: z.string().optional(),
+  daysOld: z.number().int().positive().optional(),
+}).refine(
+  (data) => Object.values(data).some((v) => v !== undefined),
+  { message: "At least one filter criteria must be specified" }
+);
+
+// ---------------------------------------------------------------------------
+// Routes
+// ---------------------------------------------------------------------------
+
 export async function listingsRoutes(app: FastifyInstance): Promise<void> {
-  // GET /listings
+
+  // GET /listings - List with optional state filter
   app.get<{ Querystring: Record<string, string> }>("/listings", async (req, reply) => {
     const q = ListingsQuerySchema.safeParse(req.query);
     if (!q.success) {
@@ -27,27 +74,56 @@ export async function listingsRoutes(app: FastifyInstance): Promise<void> {
 
     const {
       source, city, minPrice, maxPrice, minArea, maxArea,
-      rooms, status, updatedSince, page, limit,
+      rooms, status, listingStatus, updatedSince, hasComments,
+      rating, page, limit, sortBy, sortDir,
     } = q.data;
 
-    const where = {
-      ...(source && { source }),
-      ...(city && { city: { contains: city, mode: "insensitive" as const } }),
-      ...(minPrice != null && { price: { gte: minPrice } }),
-      ...(maxPrice != null && { price: { ...(minPrice != null ? { gte: minPrice } : {}), lte: maxPrice } }),
-      ...(minArea != null && { areaM2: { gte: minArea } }),
-      ...(maxArea != null && { areaM2: { ...(minArea != null ? { gte: minArea } : {}), lte: maxArea } }),
-      ...(rooms != null && { rooms }),
-      ...(status && { status }),
-      ...(updatedSince && { updatedAt: { gte: new Date(updatedSince) } }),
-    };
-
     const skip = (page - 1) * limit;
+
+    // Build Prisma where clause
+    const where: any = {};
+    if (source) where.source = source;
+    if (city) where.city = { contains: city, mode: "insensitive" };
+    if (status) where.status = status;
+    if (updatedSince) where.updatedAt = { gte: new Date(updatedSince) };
+    if (rooms != null) where.rooms = rooms;
+
+    // Price range
+    if (minPrice != null || maxPrice != null) {
+      where.price = {};
+      if (minPrice != null) where.price.gte = minPrice;
+      if (maxPrice != null) where.price.lte = maxPrice;
+    }
+
+    // Area range
+    if (minArea != null || maxArea != null) {
+      where.areaM2 = {};
+      if (minArea != null) where.areaM2.gte = minArea;
+      if (maxArea != null) where.areaM2.lte = maxArea;
+    }
+
+    // Filter by user listing status
+    if (listingStatus) {
+      where.userState = { status: listingStatus };
+    }
+
+    // Filter by whether they have comments
+    if (hasComments === "true") {
+      where.userState = { ...where.userState, comments: { not: null } };
+    } else if (hasComments === "false") {
+      where.userState = { ...where.userState, comments: null };
+    }
+
+    // Filter by rating
+    if (rating != null) {
+      where.userState = { ...where.userState, rating };
+    }
 
     const [listings, total] = await Promise.all([
       db.listing.findMany({
         where,
-        orderBy: { lastSeenAt: "desc" },
+        include: { userState: true },
+        orderBy: { [sortBy]: sortDir },
         skip,
         take: limit,
         select: {
@@ -55,6 +131,7 @@ export async function listingsRoutes(app: FastifyInstance): Promise<void> {
           title: true, price: true, currency: true, rooms: true,
           areaM2: true, city: true, neighborhood: true, thumbnailUrl: true,
           firstSeenAt: true, lastSeenAt: true, lastChangedAt: true,
+          userState: true,
         },
       }),
       db.listing.count({ where }),
@@ -66,22 +143,104 @@ export async function listingsRoutes(app: FastifyInstance): Promise<void> {
     });
   });
 
-  // GET /listings/:id
+  // GET /listings/:id - Get one with user state
   app.get<{ Params: { id: string } }>("/listings/:id", async (req, reply) => {
-    const listing = await db.listing.findUnique({ where: { id: req.params.id } });
+    const listing = await db.listing.findUnique({
+      where: { id: req.params.id },
+      include: { userState: true },
+    });
     if (!listing) return reply.status(404).send({ error: "Not found" });
     return reply.send(listing);
   });
 
-  // GET /listings/:id/events
+  // GET /listings/:id/state - Get user state
+  app.get<{ Params: { id: string } }>("/listings/:id/state", async (req, reply) => {
+    const listing = await db.listing.findUnique({
+      where: { id: req.params.id },
+      select: { id: true },
+    });
+    if (!listing) return reply.status(404).send({ error: "Not found" });
+
+    const state = await getOrCreateListingState(req.params.id);
+    return reply.send(state);
+  });
+
+  // PATCH /listings/:id/state - Update user state (status, comments, pros, cons, etc.)
+  app.patch<{ Params: { id: string }; Body: unknown }>("/listings/:id/state", async (req, reply) => {
+    const body = UpdateListingStateSchema.safeParse(req.body);
+    if (!body.success) {
+      return reply.status(400).send({ error: "Validation error", details: body.error.format() });
+    }
+
+    const listing = await db.listing.findUnique({
+      where: { id: req.params.id },
+      select: { id: true },
+    });
+    if (!listing) return reply.status(404).send({ error: "Not found" });
+
+    const updates = {
+      ...body.data,
+      visitDate: body.data.visitDate ? new Date(body.data.visitDate) : undefined,
+    };
+
+    const state = await updateListingState(req.params.id, updates);
+    return reply.send(state);
+  });
+
+  // DELETE /listings/:id - Delete single listing (only if FOUND)
+  app.delete<{ Params: { id: string } }>("/listings/:id", async (req, reply) => {
+    const listing = await db.listing.findUnique({
+      where: { id: req.params.id },
+      include: { userState: true },
+    });
+    if (!listing) return reply.status(404).send({ error: "Not found" });
+
+    try {
+      await deleteListingWithValidation(req.params.id);
+      return reply.status(204).send();
+    } catch (err: any) {
+      // State restriction error
+      return reply.status(403).send({
+        error: err.message,
+        currentStatus: listing.userState?.status ?? "FOUND",
+      });
+    }
+  });
+
+  // POST /listings/bulk-delete - Delete multiple listings by criteria
+  app.post<{ Body: unknown }>("/listings/bulk-delete", async (req, reply) => {
+    const body = BulkDeleteSchema.safeParse(req.body);
+    if (!body.success) {
+      return reply.status(400).send({ error: "Validation error", details: body.error.format() });
+    }
+
+    try {
+      const result = await deleteListingsByCriteria({
+        status: body.data.listingStatus,
+        priceMin: body.data.priceMin,
+        priceMax: body.data.priceMax,
+        areaMin: body.data.areaMin,
+        areaMax: body.data.areaMax,
+        portal: body.data.portal,
+        city: body.data.city,
+        daysOld: body.data.daysOld,
+      });
+      return reply.send(result);
+    } catch (err: any) {
+      // Contains non-FOUND listings
+      return reply.status(409).send({ error: err.message });
+    }
+  });
+
+  // GET /listings/:id/events - Audit history
   app.get<{ Params: { id: string }; Querystring: { limit?: string } }>(
     "/listings/:id/events",
     async (req, reply) => {
-      const exists = await db.listing.findUnique({
+      const listing = await db.listing.findUnique({
         where: { id: req.params.id },
         select: { id: true },
       });
-      if (!exists) return reply.status(404).send({ error: "Not found" });
+      if (!listing) return reply.status(404).send({ error: "Not found" });
 
       const limit = Math.min(200, parseInt(req.query.limit ?? "50", 10));
       const events = await db.listingEvent.findMany({
@@ -95,21 +254,21 @@ export async function listingsRoutes(app: FastifyInstance): Promise<void> {
 
   // GET /listings/:id/potential-duplicates
   app.get<{ Params: { id: string } }>("/listings/:id/potential-duplicates", async (req, reply) => {
-    const exists = await db.listing.findUnique({
+    const listing = await db.listing.findUnique({
       where: { id: req.params.id },
       select: { id: true },
     });
-    if (!exists) return reply.status(404).send({ error: "Not found" });
+    if (!listing) return reply.status(404).send({ error: "Not found" });
 
     const duplicates = await findPotentialDuplicates(req.params.id);
     return reply.send(duplicates);
   });
 
-  // PATCH /listings/:id/state  (update user state on match)
+  // PATCH /listings/:id/match-state - Legacy: update per-search match state
   app.patch<{
     Params: { id: string };
     Body: { searchId: string; userState: string };
-  }>("/listings/:id/state", async (req, reply) => {
+  }>("/listings/:id/match-state", async (req, reply) => {
     const { searchId, userState } = req.body as { searchId: string; userState: string };
     const validStates = ["new", "seen", "favorite", "discarded", "contacted"];
     if (!validStates.includes(userState)) {
@@ -125,7 +284,6 @@ export async function listingsRoutes(app: FastifyInstance): Promise<void> {
       where: { searchId_listingId: { searchId, listingId: req.params.id } },
       data: { userState },
     });
-
     return reply.send(updated);
   });
 }

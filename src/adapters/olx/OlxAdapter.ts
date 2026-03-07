@@ -13,14 +13,18 @@ export class OlxAdapter implements PortalAdapter {
   private readonly log = logger.child({ adapter: "olx" });
 
   buildSearchUrl(filters: SearchFilters): string {
-    const base =
-      filters.operation === "buy"
-        ? "https://www.olx.pl/nieruchomosci/mieszkania/sprzedaz/poznan/"
-        : "https://www.olx.pl/nieruchomosci/mieszkania/wynajem/poznan/";
+    // Build dynamic base URL with city support
+    const operation = filters.operation === "buy" ? "sprzedaz" : "wynajem";
+    const city = filters.city?.toLowerCase() ?? "poznan";
+    const base = `https://www.olx.pl/nieruchomosci/mieszkania/${operation}/${city}/`;
 
     const params = new URLSearchParams();
     params.set("search[dist]", String(filters.radiusKm ?? 5));
-    params.set("search[order]", "created_at:desc");
+
+    // Dynamic ordering (before: hardcoded to "created_at:desc")
+    const sortBy = filters.sortBy ?? "created_at";
+    const direction = filters.sortDirection ?? "DESC";
+    params.set("search[order]", `${sortBy}:${direction.toLowerCase()}`);
 
     if (filters.priceMin != null)
       params.set("search[filter_float_price:from]", String(filters.priceMin));
@@ -30,8 +34,23 @@ export class OlxAdapter implements PortalAdapter {
       params.set("search[filter_float_m:from]", String(filters.areaMin));
     if (filters.areaMax != null)
       params.set("search[filter_float_m:to]", String(filters.areaMax));
-    if (filters.rooms != null)
-      params.set("search[filter_enum_rooms][0]", `["${filters.rooms}"]`);
+
+    // OLX uses string values for rooms ("one", "two", "three", etc.)
+    if (filters.rooms != null) {
+      const roomsMap: Record<number, string> = {
+        1: "one",
+        2: "two",
+        3: "three",
+        4: "four",
+        5: "five",
+      };
+      const roomValue = roomsMap[filters.rooms] ?? String(filters.rooms);
+      params.set("search[filter_enum_rooms][0]", roomValue);
+    }
+
+    // District filter (NEW)
+    if (filters.districtId != null)
+      params.set("search[district_id]", String(filters.districtId));
 
     return `${base}?${params.toString()}`;
   }

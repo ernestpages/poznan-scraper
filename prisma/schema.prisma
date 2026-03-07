@@ -8,6 +8,18 @@ datasource db {
 }
 
 // ---------------------------------------------------------------------------
+// Enums for listing state workflow
+// ---------------------------------------------------------------------------
+enum ListingStatus {
+  FOUND
+  SEEN
+  VISIT_PENDING
+  VISITED
+  FINALIST
+  DISCARDED
+}
+
+// ---------------------------------------------------------------------------
 // Saved searches – one per portal + filter combination
 // ---------------------------------------------------------------------------
 model SavedSearch {
@@ -80,8 +92,9 @@ model Listing {
   createdAt      DateTime @default(now()) @map("created_at")
   updatedAt      DateTime @updatedAt @map("updated_at")
 
-  matches SearchListingMatch[]
-  events  ListingEvent[]
+  matches   SearchListingMatch[]
+  events    ListingEvent[]
+  userState ListingUserState?
 
   @@index([source, externalId], name: "idx_listings_source_external_id")
   @@index([status])
@@ -153,4 +166,32 @@ model ScrapeRunLog {
 
   @@index([searchId, startedAt])
   @@map("scrape_run_logs")
+}
+
+// ---------------------------------------------------------------------------
+// User state for listings: workflow status, comments, visit info, ratings
+// ---------------------------------------------------------------------------
+model ListingUserState {
+  id          String        @id @default(cuid())
+  listingId   String        @unique @map("listing_id")
+  listing     Listing       @relation(fields: [listingId], references: [id], onDelete: Cascade)
+
+  // State workflow
+  status      ListingStatus @default(FOUND)
+
+  // Additional information
+  comments    String?       @db.Text
+  visitDate   DateTime?     @map("visit_date")
+  prosJson    Json?         @map("pros_json")     // Array of strings
+  consJson    Json?         @map("cons_json")     // Array of strings
+  rating      Int?          // 1-5 stars
+
+  // Audit
+  createdAt   DateTime      @default(now()) @map("created_at")
+  updatedAt   DateTime      @updatedAt @map("updated_at")
+
+  @@index([status])
+  @@index([createdAt])
+  @@index([updatedAt])
+  @@map("listing_user_states")
 }

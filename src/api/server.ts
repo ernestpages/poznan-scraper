@@ -2,8 +2,9 @@ import Fastify from "fastify";
 import cors from "@fastify/cors";
 import { logger } from "../utils/logger.js";
 import { healthRoutes } from "./routes/health.routes.js";
-import { savedSearchRoutes } from "./routes/savedSearches.routes.js";
+import { searchesRoutes } from "./routes/searches.routes.js";
 import { listingsRoutes } from "./routes/listings.routes.js";
+import { statsRoutes } from "./routes/stats.routes.js";
 
 const PORT = Number(process.env["PORT"] ?? 3000);
 const HOST = process.env["HOST"] ?? "0.0.0.0";
@@ -42,8 +43,9 @@ export async function buildServer() {
 
   // Register routes
   await app.register(healthRoutes);
-  await app.register(savedSearchRoutes, { prefix: "/api/v1" });
+  await app.register(searchesRoutes, { prefix: "/api/v1" });
   await app.register(listingsRoutes, { prefix: "/api/v1" });
+  await app.register(statsRoutes, { prefix: "/api/v1" });
 
   return app;
 }

@@ -74,7 +74,7 @@ export async function runCrawlForSearch(search: SavedSearch): Promise<CrawlResul
 
       if (!existing) {
         // New listing – save stub immediately, queue for detail fetch
-        await db.listing.create({
+        const newListing = await db.listing.create({
           data: {
             source: stub.source,
             externalId: stub.externalId ?? null,
@@ -94,9 +94,17 @@ export async function runCrawlForSearch(search: SavedSearch): Promise<CrawlResul
           },
         });
 
+        // Initialize user state with FOUND status for every new listing
+        await db.listingUserState.create({
+          data: {
+            listingId: newListing.id,
+            status: "FOUND",
+          },
+        });
+
         await db.listingEvent.create({
           data: {
-            listingId: (await db.listing.findUniqueOrThrow({ where: { urlHash } })).id,
+            listingId: newListing.id,
             eventType: "new",
             newValueJson: stub as unknown as object,
           },

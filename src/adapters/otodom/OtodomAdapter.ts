@@ -31,7 +31,22 @@ export class OtodomAdapter implements PortalAdapter {
 
   buildSearchUrl(filters: SearchFilters): string {
     const operation = filters.operation === "buy" ? "sprzedaz" : "wynajem";
-    const base = `https://www.otodom.pl/pl/wyniki/${operation}/mieszkanie`;
+
+    // Build property type with rooms in path (e.g., "mieszkanie,3-pokoje")
+    let propertyType = "mieszkanie";
+    if (filters.rooms != null) {
+      const roomsMap: Record<number, string> = {
+        1: "1-pokoje",
+        2: "2-pokoje",
+        3: "3-pokoje",
+        4: "4-pokoje",
+        5: "5-pokoje",
+      };
+      const roomsPath = roomsMap[filters.rooms] ?? `${filters.rooms}-pokoje`;
+      propertyType = `mieszkanie,${roomsPath}`;
+    }
+
+    const base = `https://www.otodom.pl/pl/wyniki/${operation}/${propertyType}`;
 
     const params = new URLSearchParams();
     params.set("ownerTypeSingleSelect", filters.ownerType ?? "ALL");
@@ -40,13 +55,41 @@ export class OtodomAdapter implements PortalAdapter {
     if (filters.areaMin != null) params.set("areaMin", String(filters.areaMin));
     if (filters.areaMax != null) params.set("areaMax", String(filters.areaMax));
     if (filters.rooms != null) params.set("roomsNumber", `[${filters.rooms}]`);
-    params.set("by", "DEFAULT");
-    params.set("direction", "DESC");
+    params.set("by", filters.sortBy ?? "DEFAULT");
+    params.set("direction", filters.sortDirection ?? "DESC");
     params.set("viewType", "listing");
 
-    // Build path: wielkopolskie/poznan/poznan/poznan for Poznań
+    // Distance radius + place ID (Google Maps location)
+    if (filters.radiusKm != null) params.set("distanceRadius", String(filters.radiusKm));
+    if (filters.placeId != null) params.set("placeId", filters.placeId);
+
+    // Results per page
+    if (filters.resultsPerPage != null) params.set("limit", String(filters.resultsPerPage));
+
+    // Geographic bounds (map bounds)
+    if (filters.mapBounds) {
+      const { west, south, east, north } = filters.mapBounds;
+      params.set("mapBounds", `${west},${north},${east},${south}`);
+    }
+
+    // Build path: wielkopolskie/city/city/city for regional search
+    // or just city for national searches (cala-polska)
+    //
+    // When using distance radius + placeId, ALWAYS use cala-polska (national search)
+    // because the search is centered on the placeId, not a specific city
+    const hasDistanceSearch = filters.radiusKm != null && filters.placeId != null;
     const cityPath = filters.city?.toLowerCase() ?? "poznan";
-    const path = `${base}/wielkopolskie/${cityPath}/${cityPath}/${cityPath}`;
+    let path: string;
+
+    if (hasDistanceSearch || cityPath === "cala-polska") {
+      // National search - no region prefix
+      // Used for: distance-based searches or explicit national search
+      path = `${base}/cala-polska`;
+    } else {
+      // Regional search - with region prefix (wielkopolskie for Poznań, etc.)
+      // For now, default to wielkopolskie; in future could map city to region
+      path = `${base}/wielkopolskie/${cityPath}/${cityPath}/${cityPath}`;
+    }
 
     return `${path}?${params.toString()}`;
   }

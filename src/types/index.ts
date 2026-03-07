@@ -14,11 +14,14 @@ export interface SearchFilters {
   areaMax?: number;
   radiusKm?: number;
   ownerType?: string;
+  placeId?: string;
+  resultsPerPage?: number;
+  districtId?: string;
   mapBounds?: {
-    east: number;
-    north: number;
     west: number;
     south: number;
+    east: number;
+    north: number;
   };
   sortBy?: string;
   sortDirection?: "ASC" | "DESC";
@@ -111,4 +114,42 @@ export interface CrawlResult {
   inactiveCount: number;
   durationMs: number;
   error?: string;
+}
+
+// ---------------------------------------------------------------------------
+// Listing user state - workflow and additional information
+// ---------------------------------------------------------------------------
+
+export type ListingStatus =
+  | "FOUND"
+  | "SEEN"
+  | "VISIT_PENDING"
+  | "VISITED"
+  | "FINALIST"
+  | "DISCARDED";
+
+export interface ListingUserState {
+  id: string;
+  listingId: string;
+  status: ListingStatus;
+  comments?: string;
+  visitDate?: Date;
+  pros?: string[];
+  cons?: string[];
+  rating?: number;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface ListingDetailsWithState extends ListingDetails {
+  userState?: ListingUserState | null;
+}
+
+export interface UpdateListingStateRequest {
+  status?: ListingStatus;
+  comments?: string;
+  visitDate?: Date;
+  pros?: string[];
+  cons?: string[];
+  rating?: number;
 }
