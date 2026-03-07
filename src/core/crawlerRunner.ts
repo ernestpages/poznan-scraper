@@ -252,7 +252,7 @@ async function persistDetails(
   const existing = await db.listing.findUnique({ where: { urlHash } });
 
   if (!existing) {
-    log.warn({ url: canonical }, "Detail fetch returned unknown listing – skipping persist");
+    logger.warn({ url: canonical }, "Detail fetch returned unknown listing – skipping persist");
     return;
   }
 
@@ -293,8 +293,8 @@ async function persistDetails(
       agencyName: details.agencyName ?? existing.agencyName,
       advertiserType: details.advertiserType ?? existing.advertiserType,
       thumbnailUrl: details.thumbnailUrl ?? existing.thumbnailUrl,
-      photosJson: details.photos ? (details.photos as string[]) : existing.photosJson,
-      featuresJson: details.features ? (details.features as string[]) : existing.featuresJson,
+      photosJson: details.photos ? (details.photos as any) : existing.photosJson,
+      featuresJson: details.features ? (details.features as any) : existing.featuresJson,
       publishedAtText: details.publishedAtText ?? existing.publishedAtText,
       rawDetailsJson: (details.rawDetails ?? {}) as object,
       fingerprint,

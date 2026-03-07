@@ -99,7 +99,7 @@ export async function savedSearchRoutes(app: FastifyInstance): Promise<void> {
     let searchUrl = existing.searchUrl;
     let filtersJson = existing.filtersJson;
     if (filters) {
-      filtersJson = filters;
+      filtersJson = filters as any;
       const adapter = getAdapter(existing.portal);
       searchUrl = adapter.buildSearchUrl(filters);
     }
