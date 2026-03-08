@@ -22,9 +22,19 @@ const SearchFiltersSchema = z.object({
   areaMin: z.number().positive().optional(),
   areaMax: z.number().positive().optional(),
   radiusKm: z.number().positive().optional(),
+  placeId: z.string().optional(),
+  districtId: z.string().optional(),
+  resultsPerPage: z.number().int().positive().optional(),
   ownerType: z.string().optional(),
   sortBy: z.string().optional(),
   sortDirection: z.enum(["ASC", "DESC"]).optional(),
+  mapBounds: z.object({
+    west: z.number(),
+    south: z.number(),
+    east: z.number(),
+    north: z.number(),
+  }).optional(),
+  customSearchUrl: z.string().optional(),
   extra: z.record(z.unknown()).optional(),
 });
 

@@ -33,6 +33,7 @@ const SearchFiltersSchema = z.object({
     east: z.number(),
     north: z.number(),
   }).optional(),
+  customSearchUrl: z.string().optional(),
   extra: z.record(z.unknown()).optional(),
 });
 
