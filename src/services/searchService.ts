@@ -62,7 +62,7 @@ export async function createSearch(input: CreateSearchInput): Promise<SavedSearc
     data: {
       name,
       portal,
-      filtersJson: filters,
+      filtersJson: filters as any,
       searchUrl,
       frequencyMinutes,
       enabled: true,
@@ -207,7 +207,7 @@ export async function duplicateSearch(searchId: string, newName?: string): Promi
     data: {
       name,
       portal: existing.portal,
-      filtersJson: existing.filters,
+      filtersJson: existing.filters as any,
       searchUrl: existing.searchUrl,
       frequencyMinutes: existing.frequencyMinutes,
       enabled: true,
