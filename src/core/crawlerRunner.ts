@@ -198,6 +198,17 @@ async function _runCrawlForSearch(search: SavedSearch): Promise<CrawlResult> {
           if (result?.updated) updatedCount++;
         } catch (err) {
           log.error({ err, url }, "Detail fetch failed");
+          // Reset lastCheckedAt to epoch so Phase 2 re-queues this listing
+          // on the very next search run instead of waiting 24 hours.
+          try {
+            const urlHash = hashUrl(canonicalizeUrl(search.portal, url));
+            await db.listing.updateMany({
+              where: { urlHash },
+              data: { lastCheckedAt: new Date(0) },
+            });
+          } catch {
+            // Best-effort – don't let this mask the original error
+          }
         }
       }
     );
