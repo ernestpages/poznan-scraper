@@ -78,17 +78,11 @@ export function parseSearchResults(html: string): ListingStub[] {
 }
 
 function parseCard(
-  $: cheerio.CheerioAPI,
+  _$: cheerio.CheerioAPI,
   card: cheerio.Cheerio<any>,
   discoveredAt: string
 ): ListingStub | null {
   // --- URL ---
-  // domy.pl: anchor with class containing "title" or "name", or first <a>
-  const linkEl = card
-    .find('a[class*="title"], a[class*="name"], a.offer-item__title, a[href*="/ofert"]')
-    .first()
-    .add(card.find("a[href]").first());
-
   const href =
     card.find('a[class*="title"]').first().attr("href") ||
     card.find("a[href*='/ofert']").first().attr("href") ||
