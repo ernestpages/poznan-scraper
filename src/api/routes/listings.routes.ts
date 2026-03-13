@@ -257,7 +257,31 @@ export async function listingsRoutes(app: FastifyInstance): Promise<void> {
       return reply.status(502).send({ error: "Detail fetch failed", message: msg });
     }
 
-    // 3. Persist (reuses existing persistDetails logic)
+    // 3. Create stub first – persistDetails only updates existing rows,
+    //    so we must ensure the row exists before calling it.
+    const now = new Date();
+    const stub = await db.listing.create({
+      data: {
+        source: portal,
+        canonicalUrl: canonical,
+        urlHash,
+        status: "active",
+        title: details.title ?? null,
+        price: details.price ?? null,
+        currency: details.currency ?? "PLN",
+        rooms: details.rooms ?? null,
+        areaM2: details.areaM2 ?? null,
+        thumbnailUrl: details.thumbnailUrl ?? null,
+        firstSeenAt: now,
+        lastSeenAt: now,
+        lastCheckedAt: new Date(0), // force persistDetails to run immediately
+      },
+    });
+
+    // Initialize user state
+    await db.listingUserState.create({ data: { listingId: stub.id, status: "FOUND" } });
+
+    // 4. Persist full details (updates the stub we just created)
     await persistDetailsPublic(details);
 
     const created = await db.listing.findUnique({
