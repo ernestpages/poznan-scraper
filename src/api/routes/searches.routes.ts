@@ -39,7 +39,7 @@ const SearchFiltersSchema = z.object({
 
 const CreateSearchSchema = z.object({
   name: z.string().min(1).max(200),
-  portal: z.enum(["immohouse", "olx", "otodom"]),
+  portal: z.enum(["immohouse", "olx", "otodom", "domy"]),
   enabled: z.boolean().default(true),
   frequencyMinutes: z.number().int().min(5).max(1440).default(60),
   filters: SearchFiltersSchema,
