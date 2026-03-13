@@ -43,6 +43,8 @@ const CreateSearchSchema = z.object({
   enabled: z.boolean().default(true),
   frequencyMinutes: z.number().int().min(5).max(1440).default(60),
   filters: SearchFiltersSchema,
+  // Convenience: accept customSearchUrl at the top level and merge into filters
+  customSearchUrl: z.string().url().optional(),
 });
 
 const UpdateSearchSchema = z.object({
@@ -72,7 +74,12 @@ export async function searchesRoutes(app: FastifyInstance): Promise<void> {
       return reply.status(400).send({ error: "Validation error", details: body.error.format() });
     }
 
-    const { name, portal, enabled, frequencyMinutes, filters } = body.data;
+    const { name, portal, enabled, frequencyMinutes, customSearchUrl } = body.data;
+    // Merge top-level customSearchUrl into filters (either location is accepted)
+    const filters = {
+      ...body.data.filters,
+      ...(customSearchUrl ? { customSearchUrl } : {}),
+    };
     const adapter = getAdapter(portal);
     const searchUrl = adapter.buildSearchUrl(filters);
 

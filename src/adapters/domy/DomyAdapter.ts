@@ -114,8 +114,22 @@ export class DomyAdapter implements PortalAdapter {
         break;
       }
 
+      // Diagnostic: log a snapshot of the HTML so we can verify selectors
+      if (page === 1) {
+        const snippet = result.html.slice(0, 2000).replace(/\s+/g, " ");
+        this.log.debug({ htmlSnippet: snippet }, "domy.pl raw HTML (first 2000 chars)");
+        // Also log all classes present to help tune selectors
+        const classMatches = [...result.html.matchAll(/class="([^"]+)"/g)]
+          .map((m) => m[1])
+          .filter((c): c is string => !!c)
+          .flatMap((c) => c.split(/\s+/))
+          .filter((c) => /offer|item|list|card|property|result|search/i.test(c));
+        const uniqueClasses = [...new Set(classMatches)].slice(0, 40);
+        this.log.info({ uniqueClasses }, "domy.pl relevant CSS classes found in HTML");
+      }
+
       const stubs = parseSearchResults(result.html);
-      this.log.debug({ page, count: stubs.length }, "Parsed domy.pl stubs");
+      this.log.info({ page, count: stubs.length }, "Parsed domy.pl stubs");
 
       if (stubs.length === 0) break;
 
