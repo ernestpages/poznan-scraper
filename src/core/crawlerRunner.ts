@@ -28,6 +28,29 @@ const adapters: Record<string, PortalAdapter> = {
   domy: new DomyAdapter(),
 };
 
+// ---------------------------------------------------------------------------
+// Playwright-based portal lock
+// Portals that share a single browser instance (Playwright) must not run
+// concurrently – a finishing run closes the browser that the other run is
+// still using.  We serialise them with a per-portal promise chain.
+// ---------------------------------------------------------------------------
+
+const PLAYWRIGHT_PORTALS = new Set(["otodom"]);
+const portalLock: Record<string, Promise<unknown>> = {};
+
+/**
+ * Wrap `fn` so that only ONE call runs at a time for the given portal.
+ * Subsequent calls are queued and run after the previous one resolves.
+ */
+function withPortalLock<T>(portal: string, fn: () => Promise<T>): Promise<T> {
+  if (!PLAYWRIGHT_PORTALS.has(portal)) return fn();
+
+  const prev = portalLock[portal] ?? Promise.resolve();
+  const next = prev.then(() => fn(), () => fn()); // run even if prev errored
+  portalLock[portal] = next.catch(() => undefined); // swallow so chain keeps going
+  return next;
+}
+
 export function getAdapter(source: string): PortalAdapter {
   const adapter = adapters[source];
   if (!adapter) throw new Error(`Unknown portal source: ${source}`);
@@ -38,7 +61,11 @@ export function getAdapter(source: string): PortalAdapter {
 // Main runner
 // ---------------------------------------------------------------------------
 
-export async function runCrawlForSearch(search: SavedSearch): Promise<CrawlResult> {
+export function runCrawlForSearch(search: SavedSearch): Promise<CrawlResult> {
+  return withPortalLock(search.portal, () => _runCrawlForSearch(search));
+}
+
+async function _runCrawlForSearch(search: SavedSearch): Promise<CrawlResult> {
   const startedAt = Date.now();
   const log = logger.child({ searchId: search.id, portal: search.portal });
 
