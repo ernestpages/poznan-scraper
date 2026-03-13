@@ -67,7 +67,7 @@ export function parseSearchResults(html: string): ListingStub[] {
 }
 
 function parseCard(
-  $: cheerio.CheerioAPI,
+  _$: cheerio.CheerioAPI,
   card: cheerio.Cheerio<any>,
   discoveredAt: string
 ): ListingStub | null {
