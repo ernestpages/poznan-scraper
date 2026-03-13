@@ -23,6 +23,7 @@ const SearchFiltersSchema = z.object({
   radiusKm: z.number().positive().optional(),
   placeId: z.string().optional(),
   districtId: z.string().optional(),
+  onlyWithPhotos: z.boolean().optional(),
   resultsPerPage: z.number().int().positive().optional(),
   ownerType: z.string().optional(),
   sortBy: z.string().optional(),
