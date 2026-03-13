@@ -1,13 +1,28 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { db } from "../../db/prisma.js";
-import { findPotentialDuplicates } from "../../core/crawlerRunner.js";
+import { findPotentialDuplicates, getAdapter, persistDetailsPublic } from "../../core/crawlerRunner.js";
+import { canonicalizeUrl, hashUrl } from "../../core/canonicalizeUrl.js";
 import {
   getOrCreateListingState,
   updateListingState,
   deleteListingWithValidation,
   deleteListingsByCriteria,
 } from "../../services/listingStateService.js";
+
+/** Detect which portal a URL belongs to based on hostname */
+function detectPortal(url: string): string | null {
+  try {
+    const host = new URL(url).hostname.toLowerCase();
+    if (host.includes("otodom.pl"))   return "otodom";
+    if (host.includes("olx.pl"))      return "olx";
+    if (host.includes("domy.pl"))     return "domy";
+    if (host.includes("immohouse"))   return "immohouse";
+    return null;
+  } catch {
+    return null;
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Validation schemas
@@ -198,6 +213,59 @@ export async function listingsRoutes(app: FastifyInstance): Promise<void> {
         currentStatus: listing.userState?.status ?? "FOUND",
       });
     }
+  });
+
+  // POST /listings/import - Import a single listing by URL
+  app.post<{ Body: unknown }>("/listings/import", async (req, reply) => {
+    const body = z.object({ url: z.string().url() }).safeParse(req.body);
+    if (!body.success) {
+      return reply.status(400).send({ error: "Validation error", details: body.error.format() });
+    }
+
+    const rawUrl = body.data.url;
+    const portal = detectPortal(rawUrl);
+    if (!portal) {
+      return reply.status(422).send({
+        error: "Unrecognised portal",
+        message: "URL does not match any known portal (otodom, olx, domy, immohouse)",
+      });
+    }
+
+    const canonical = canonicalizeUrl(portal, rawUrl);
+    const urlHash   = hashUrl(canonical);
+
+    // 1. Already in DB?
+    const existing = await db.listing.findUnique({
+      where: { urlHash },
+      include: { userState: true },
+    });
+
+    if (existing) {
+      return reply.status(200).send({
+        alreadyExists: true,
+        listing: existing,
+      });
+    }
+
+    // 2. Fetch details via adapter
+    let details;
+    try {
+      const adapter = getAdapter(portal);
+      details = await adapter.fetchListingDetails(canonical);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      return reply.status(502).send({ error: "Detail fetch failed", message: msg });
+    }
+
+    // 3. Persist (reuses existing persistDetails logic)
+    await persistDetailsPublic(details);
+
+    const created = await db.listing.findUnique({
+      where: { urlHash },
+      include: { userState: true },
+    });
+
+    return reply.status(201).send({ alreadyExists: false, listing: created });
   });
 
   // POST /listings/bulk-delete - Delete multiple listings by criteria

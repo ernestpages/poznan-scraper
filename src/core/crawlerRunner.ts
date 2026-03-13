@@ -315,6 +315,11 @@ async function _runCrawlForSearch(search: SavedSearch): Promise<CrawlResult> {
 //   This keeps exactly ONE row per real apartment in the database.
 // ---------------------------------------------------------------------------
 
+/** Public alias so the import endpoint can reuse persist logic without a searchId */
+export async function persistDetailsPublic(details: ListingDetails) {
+  return persistDetails(details);
+}
+
 async function persistDetails(
   details: ListingDetails,
   searchId?: string,
